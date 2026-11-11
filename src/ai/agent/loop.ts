@@ -163,12 +163,13 @@ export async function runAgent(req: AgentRequest): Promise<AgentOutcome> {
       usage.outputTokens += r.usage.outputTokens;
     }
     const calls = r.toolCalls ?? [];
+    const continuation = r.continuation ? { continuation: r.continuation } : {};
     // 说完了,但调用方看出话里说要做的事没做:补一句再问一轮(要留够两轮:做那件事,再说完)
     if (!calls.length && round + 2 < max && req.followUp) {
       const f = req.followUp(r.text, steps);
       if (f && !followed.has(f.key ?? '')) {
         followed.add(f.key ?? '');
-        msgs.push({ role: 'assistant', content: r.text }, { role: 'user', content: f.say });
+        msgs.push({ role: 'assistant', content: r.text, ...continuation }, { role: 'user', content: f.say });
         if (f.tools?.length) only = new Set(f.tools);
         continue;
       }
@@ -177,7 +178,7 @@ export async function runAgent(req: AgentRequest): Promise<AgentOutcome> {
     if (!calls.length || last) {
       // 一步没做、一句没说:算空回复(做过步骤再收尾不说话可以,结果已经摆在面板上)
       if (!steps.length && !r.text.trim()) throw new AiError('bad-response', 'AI 返回了空回复,请再试一次');
-      msgs.push({ role: 'assistant', content: r.text });
+      msgs.push({ role: 'assistant', content: r.text, ...(!calls.length ? continuation : {}) });
       return { text: r.text.trim(), steps, messages: msgs, end: calls.length || (last && round > 0) ? 'rounds' : 'done', rounds: round + 1, usage };
     }
     // 调用编号重复(或者空)就换成不重的:每条工具结果要对上各自那次调用
@@ -188,7 +189,7 @@ export async function runAgent(req: AgentRequest): Promise<AgentOutcome> {
       used.add(id);
       return id === c.id ? c : { ...c, id };
     });
-    msgs.push({ role: 'assistant', content: r.text, toolCalls: fixed });
+    msgs.push({ role: 'assistant', content: r.text, toolCalls: fixed, ...continuation });
     for (const c of fixed) {
       if (req.signal?.aborted) throw aborted();
       const tool = byName.get(c.name);

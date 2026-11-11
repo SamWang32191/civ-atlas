@@ -209,7 +209,7 @@ export async function aiChat(req: AiRequest, opts: AiCallOptions = {}): Promise<
     at: new Date().toISOString(),
     feature: req.feature,
     title: req.title,
-    messages: req.messages.map((m) => ({ ...m, content: clip(m.content) })),
+    messages: req.messages.map(({ continuation: _continuation, ...m }) => ({ ...m, content: clip(m.content) })),
     world: worldOf(),
   };
   if (aiOff) {

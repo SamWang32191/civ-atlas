@@ -1,21 +1,27 @@
 /**
- * OpenAI Responses API:GPT-6.1 Terra 的工具调用必须走这里。
- * 关闭推理、store:false,每轮由本地传完整对话,不使用 previous_response_id。
+ * OpenAI Responses API:Sol / Terra / Astra 的工具调用必须走这里。
+ * store:false,每轮由本地传完整对话(含加密推理续接资料),不使用 previous_response_id。
  * 流中只把 output_text.delta 交给界面;完整文本和工具参数以 response.completed.output 为准,
  * 不把未完成的工具调用交给助手执行。没有完成事件的断流一律报错。
  * https://developers.openai.com/api/docs/guides/migrate-to-responses
  * https://developers.openai.com/api/reference/resources/responses/streaming-events
  */
 import { idleTimer, readSse } from '../sse';
-import { AiError, type AiCallOptions, type AiRequest, type AiResult, type AiToolCall } from '../types';
+import { AiError, type AiCallOptions, type AiContinuation, type AiRequest, type AiResult, type AiToolCall } from '../types';
 import { errorInfo, mapHttpError, withJsonHint, type CompatConfig } from './compat';
 
-type Config = Pick<CompatConfig, 'name' | 'url' | 'key' | 'model' | 'mapError' | 'idleMs'>;
+type Config = Pick<CompatConfig, 'name' | 'url' | 'key' | 'model' | 'mapError' | 'idleMs'> & { reasoningEffort: 'none' | 'low' };
 
-function requestBody(model: string, req: AiRequest): Record<string, unknown> {
+function requestBody({ model, reasoningEffort }: Config, req: AiRequest): Record<string, unknown> {
   const input: Record<string, unknown>[] = [];
   for (const m of req.json ? withJsonHint(req.messages) : req.messages) {
-    if (m.role === 'tool') {
+    if (m.role === 'assistant' && m.continuation?.provider === 'openai' && m.continuation.model === model) {
+      // 保留 reasoning / message / function_call 的原顺序及 phase;只同步助手去重后的调用编号。
+      let callIndex = 0;
+      for (const item of m.continuation.items) {
+        input.push(item.type === 'function_call' ? { ...item, call_id: m.toolCalls?.[callIndex++]?.id ?? item.call_id } : item);
+      }
+    } else if (m.role === 'tool') {
       input.push({ type: 'function_call_output', call_id: m.toolCallId ?? '', output: m.content });
     } else if (m.role === 'assistant' && m.toolCalls?.length) {
       if (m.content) input.push({ role: 'assistant', content: m.content });
@@ -24,8 +30,9 @@ function requestBody(model: string, req: AiRequest): Record<string, unknown> {
       input.push({ role: m.role, content: m.content });
     }
   }
-  const body: Record<string, unknown> = { model, input, stream: true, store: false, reasoning: { effort: 'none' } };
-  if (req.temperature !== undefined) body.temperature = req.temperature;
+  const body: Record<string, unknown> = { model, input, stream: true, store: false, reasoning: { effort: reasoningEffort } };
+  if (reasoningEffort !== 'none') body.include = ['reasoning.encrypted_content'];
+  if (reasoningEffort === 'none' && req.temperature !== undefined) body.temperature = req.temperature;
   if (req.maxTokens !== undefined) body.max_output_tokens = req.maxTokens;
   if (req.json) body.text = { format: { type: 'json_object' } };
   if (req.tools?.length) {
@@ -54,7 +61,7 @@ export async function responsesChat(cfg: Config, req: AiRequest, opts: AiCallOpt
     const res = await fetch(cfg.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', Authorization: `Bearer ${cfg.key}` },
-      body: JSON.stringify(requestBody(cfg.model, req)),
+      body: JSON.stringify(requestBody(cfg, req)),
       signal: idle.signal,
       credentials: 'omit',
       referrerPolicy: 'no-referrer',
@@ -91,8 +98,12 @@ export async function responsesChat(cfg: Config, req: AiRequest, opts: AiCallOpt
 
     let text = '';
     const toolCalls: AiToolCall[] = [];
+    let hasReasoning = false;
     for (const item of final.output) {
-      if (item?.type === 'message') {
+      if (item?.type === 'reasoning') {
+        if (typeof item.id !== 'string' || !Array.isArray(item.summary) || typeof item.encrypted_content !== 'string' || !item.encrypted_content) throw bad();
+        hasReasoning = true;
+      } else if (item?.type === 'message') {
         if (!Array.isArray(item.content)) throw bad();
         for (const part of item.content) {
           if (part?.type === 'refusal') throw new AiError('content-filter', `${cfg.name} 拒绝了这次请求,换个说法再试`);
@@ -110,7 +121,8 @@ export async function responsesChat(cfg: Config, req: AiRequest, opts: AiCallOpt
     const usage = u && Number.isFinite(u.input_tokens) && Number.isFinite(u.output_tokens)
       ? { inputTokens: u.input_tokens, outputTokens: u.output_tokens }
       : undefined;
-    return { text, ...(toolCalls.length ? { toolCalls } : {}), model: typeof final.model === 'string' && final.model ? final.model : cfg.model, usage };
+    const continuation: AiContinuation | undefined = hasReasoning ? { provider: 'openai', model: cfg.model, items: final.output } : undefined;
+    return { text, ...(toolCalls.length ? { toolCalls } : {}), ...(continuation ? { continuation } : {}), model: typeof final.model === 'string' && final.model ? final.model : cfg.model, usage };
   } catch (e) {
     if (opts.signal?.aborted) throw new AiError('aborted', '已取消');
     if (idle.timedOut()) throw new AiError('network', `${cfg.name} 很久没有回应,请检查网络或稍后再试`);

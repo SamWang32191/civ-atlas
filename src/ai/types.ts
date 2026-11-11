@@ -11,6 +11,13 @@
 /** official = 我们提供的 AI(积分);openai = OpenAI API;deepseek = DeepSeek 官网 API;bailian = 阿里云百炼;mock = 测试用的假 AI(不联网,冒烟 / 单测用) */
 export type AiProviderKind = 'official' | 'openai' | 'deepseek' | 'bailian' | 'mock';
 
+/** 服务商回传的续接资料(含加密推理);只在同一服务商、同一模型的对话中原样交回,不记入调用日志。 */
+export interface AiContinuation {
+  provider: AiProviderKind;
+  model: string;
+  items: Record<string, unknown>[];
+}
+
 export interface AiMessage {
   /** tool = 工具执行的结果(回给模型看) */
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -19,6 +26,7 @@ export interface AiMessage {
   toolCalls?: AiToolCall[];
   /** tool:回的是哪一次调用(AiToolCall.id) */
   toolCallId?: string;
+  continuation?: AiContinuation;
 }
 
 /**
@@ -48,7 +56,7 @@ export interface AiRequest {
   maxTokens?: number;
   /** 要求模型只回一个 JSON 对象(起名这类要结构化结果的功能用) */
   json?: boolean;
-  /** 模型可以调用的工具(助手用);给了就关掉深度思考 */
+  /** 模型可以调用的工具(助手用);是否能关闭推理由服务商及模型决定 */
   tools?: AiTool[];
   /** auto = 模型自己决定(默认);none = 这次不许调用,只回话;required = 必须调用 */
   toolChoice?: 'auto' | 'none' | 'required';
@@ -66,6 +74,7 @@ export interface AiResult {
   toolCalls?: AiToolCall[];
   provider: AiProviderKind;
   model: string;
+  continuation?: AiContinuation;
   usage?: AiUsage;
   /** 用我们提供的 AI 时,这次扣了多少积分 */
   credits?: number;

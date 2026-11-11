@@ -12,6 +12,7 @@
 import { useSyncExternalStore } from 'react';
 import { notifyAiChanged, setActiveProvider, setAiOn } from './client';
 import type { AiProviderKind } from './types';
+import { DEFAULT_OPENAI_MODEL, openaiModel } from './providers/openaiModels';
 
 export type BailianRegion = 'cn' | 'intl';
 
@@ -39,7 +40,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   enabled: true,
   provider: null,
   remember: true,
-  openai: { model: 'gpt-6.1-terra' },
+  openai: { model: DEFAULT_OPENAI_MODEL },
   deepseek: { model: 'deepseek-flash', thinking: false },
   bailian: { model: 'qwen-plus', region: 'cn', thinking: false },
 };
@@ -90,7 +91,7 @@ export function sanitizeSettings(v: unknown): AiSettings {
     enabled: bool(o.enabled, d.enabled),
     provider: KINDS.includes(o.provider) ? o.provider : null,
     remember: bool(o.remember, d.remember),
-    openai: { model: str(oa.model, d.openai.model) },
+    openai: { model: openaiModel(str(oa.model, d.openai.model)).id },
     deepseek: { model: str(ds.model, d.deepseek.model), thinking: bool(ds.thinking, d.deepseek.thinking) },
     bailian: {
       model: str(bl.model, d.bailian.model),

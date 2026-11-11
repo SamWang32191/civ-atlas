@@ -85,7 +85,7 @@ function request(index = 0) {
   return { url: String(url), headers: new Headers(init?.headers), body: JSON.parse(String(init?.body)), init };
 }
 
-function configure(model = 'gpt-5.4-mini') {
+function configure(model = 'gpt-6.1-terra') {
   app.setSecret('openai', KEY);
   app.updateAiSettings({ openai: { model } });
   app.chooseProvider('openai');
@@ -114,75 +114,90 @@ describe('OpenAI', () => {
 
     configure();
     expect(app.getAiStatus()).toMatchObject({ provider: 'openai', ready: true });
-    fetchMock.mockImplementation(async () => stream([{ role: 'assistant', content: '' }, { content: '{"名":' }, { content: '"碧溪"}' }]));
+    fetchMock.mockImplementation(async () => responseStream(responseFixture([outputMessage('{"名":"碧溪"}')]), [
+      { type: 'response.output_text.delta', item_id: 'msg_test', output_index: 0, content_index: 0, delta: '{"名":', logprobs: [] },
+      { type: 'response.output_text.delta', item_id: 'msg_test', output_index: 0, content_index: 0, delta: '"碧溪"}', logprobs: [] },
+    ]));
     const delta = vi.fn();
     const result = await app.aiChat({ ...REQ, json: true }, { onDelta: delta });
-    expect(result).toMatchObject({ provider: 'openai', model: 'gpt-5.4-mini-2026-03-17', text: '{"名":"碧溪"}', usage: { inputTokens: 12, outputTokens: 8 } });
+    expect(result).toMatchObject({ provider: 'openai', model: 'gpt-6.1-terra', text: '{"名":"碧溪"}', usage: { inputTokens: 12, outputTokens: 8 } });
     expect(delta.mock.calls).toEqual([['{"名":', '{"名":'], ['"碧溪"}', '{"名":"碧溪"}']]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const sent = request();
-    expect(sent.url).toBe('https://api.openai.com/v1/chat/completions');
+    expect(sent.url).toBe('https://api.openai.com/v1/responses');
     expect(sent.headers.get('authorization')).toBe(`Bearer ${KEY}`);
     expect(sent.init).toMatchObject({ method: 'POST', credentials: 'omit', referrerPolicy: 'no-referrer' });
     expect(sent.body).toEqual({
-      model: 'gpt-5.4-mini',
-      messages: [{ role: 'system', content: expect.stringMatching(/json/i) }, { role: 'user', content: '你好' }],
+      model: 'gpt-6.1-terra',
+      input: [{ role: 'system', content: expect.stringMatching(/json/i) }, { role: 'user', content: '你好' }],
       stream: true,
-      stream_options: { include_usage: true },
-      max_completion_tokens: 600,
-      response_format: { type: 'json_object' },
-      reasoning_effort: 'none',
+      store: false,
+      temperature: 0,
+      max_output_tokens: 600,
+      text: { format: { type: 'json_object' } },
+      reasoning: { effort: 'none' },
     });
     expect(app.getCallLog().calls[0]).toMatchObject({ provider: 'openai', ok: true, text: '{"名":"碧溪"}', usage: { inputTokens: 12, outputTokens: 8 } });
     expect(JSON.stringify(app.getCallLog().calls)).not.toContain(KEY);
   });
 
-  it.each(['gpt-5.4', 'gpt-5.4-nano', 'gpt-5.4-mini-2026-03-17'])('GPT-5.4 系列及快照 %s 关闭推理,保留功能给的 token 上限', async (model) => {
-    configure(model);
-    await app.aiChat(REQ);
-    expect(request().body).toMatchObject({ model, max_completion_tokens: 600, reasoning_effort: 'none' });
-    expect(request().body).not.toHaveProperty('max_tokens');
-    expect(request().body).not.toHaveProperty('temperature');
-  });
-
   it.each([
-    ['gpt-4.1-mini', { temperature: 0 }],
-    ['o3-mini', {}],
-    ['gpt-5-mini', {}],
-  ])('手填 %s 使用选定模型;不把非兼容参数传给推理模型', async (model, sampling) => {
+    ['gpt-6.1-sol', 'low', { include: ['reasoning.encrypted_content'] }],
+    ['gpt-6.1-terra', 'none', { temperature: 0 }],
+    ['gpt-6-astra', 'low', { include: ['reasoning.encrypted_content'] }],
+  ])('选 %s 后实际请求对应模型和兼容参数,重新打开仍然保留选择', async (model, effort, extra) => {
     configure(model);
+    app = await loadApp();
     await app.aiChat(REQ);
-    expect(request().body).toEqual({ model, messages: [{ role: 'user', content: '你好' }], stream: true, stream_options: { include_usage: true }, max_completion_tokens: 600, ...sampling });
+    expect(request().url).toBe('https://api.openai.com/v1/responses');
+    expect(request().body).toEqual({ model, input: [{ role: 'user', content: '你好' }], stream: true, store: false, reasoning: { effort }, max_output_tokens: 600, ...extra });
   });
 
-  it('助手的工具调用分段拼回,下一轮带调用 id 和工具结果交回 OpenAI', async () => {
-    configure();
-    fetchMock.mockImplementationOnce(async () => stream([
-      { role: 'assistant', content: null, tool_calls: [{ index: 0, id: 'call_country', type: 'function', function: { name: 'country', arguments: '' } }] },
-      { tool_calls: [{ index: 0, function: { arguments: '{"country":' } }] },
-      { tool_calls: [{ index: 0, function: { arguments: '"P3"}' } }] },
-    ], 'tool_calls'));
-    const req: AiRequest = {
-      ...REQ,
-      tools: [{ name: 'country', description: '查国家', parameters: { type: 'object', properties: { country: { type: 'string' } }, required: ['country'] } }],
-      toolChoice: 'required',
-    };
-    const first = await app.aiChat(req);
-    expect(first.toolCalls).toEqual([{ id: 'call_country', name: 'country', args: '{"country":"P3"}' }]);
-    expect(first.text).toBe('');
-    expect(request().body.tools).toEqual([{ type: 'function', function: { name: 'country', description: '查国家', parameters: { type: 'object', properties: { country: { type: 'string' } }, required: ['country'] } } }]);
-    expect(request().body.tool_choice).toBe('required');
-    await app.aiChat({ ...req, toolChoice: 'none', messages: [...REQ.messages,
-      { role: 'assistant', content: '', toolCalls: first.toolCalls },
-      { role: 'tool', toolCallId: 'call_country', content: 'P3 大昌王朝' },
-    ] });
+  it.each(['gpt-5.4-mini', 'gpt-4.1-mini', 'unknown-model', ''])('旧设置 %s 不会调用选单外模型,恢复为 Terra', async (model) => {
+    storage.setItem('civ-atlas:ai-settings', JSON.stringify({ provider: 'openai', openai: { model } }));
+    storage.setItem('civ-atlas:ai-secrets', JSON.stringify({ openai: KEY }));
+    app = await loadApp();
+    await app.aiChat(REQ);
+    expect(request().url).toBe('https://api.openai.com/v1/responses');
+    expect(request().body.model).toBe('gpt-6.1-terra');
+  });
+
+  it.each(['gpt-6.1-sol', 'gpt-6-astra'])('%s 助手真正执行工具后原样续接加密推理与 phase,但不把续接资料写进日志', async (model) => {
+    configure(model);
+    const { runAgent } = await import('../src/ai/agent/loop');
+    const reasoning = { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'opaque-reasoning-1' };
+    const preamble = { ...outputMessage('先查一下'), phase: 'commentary' };
+    const call = { type: 'function_call', id: 'fc_1', call_id: 'call_country', name: 'country', arguments: '{"country":"P3"}', status: 'completed' };
+    fetchMock.mockImplementationOnce(async () => responseStream(responseFixture([reasoning, preamble, call], { model })));
+    fetchMock.mockImplementationOnce(async () => responseStream(responseFixture([outputMessage('查到了')], { model })));
+    const result = await runAgent({ ...REQ, maxRounds: 3, tools: [{
+      def: { name: 'country', description: '查国家', parameters: { type: 'object', properties: { country: { type: 'string' } }, required: ['country'] } },
+      run: (args) => `${args.country} 大昌王朝`,
+    }] });
+    expect(result.text).toBe('查到了');
+    expect(result.steps).toMatchObject([{ state: 'ok', args: { country: 'P3' }, result: 'P3 大昌王朝' }]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(request(1).body.messages).toEqual([
+    expect(request(1).body.input).toEqual([
       { role: 'user', content: '你好' },
-      { role: 'assistant', content: '', tool_calls: [{ id: 'call_country', type: 'function', function: { name: 'country', arguments: '{"country":"P3"}' } }] },
-      { role: 'tool', tool_call_id: 'call_country', content: 'P3 大昌王朝' },
+      { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'opaque-reasoning-1' },
+      { type: 'message', id: 'msg_test', role: 'assistant', status: 'completed', phase: 'commentary', content: [{ type: 'output_text', text: '先查一下', annotations: [], logprobs: [] }] },
+      { type: 'function_call', id: 'fc_1', call_id: 'call_country', name: 'country', arguments: '{"country":"P3"}', status: 'completed' },
+      { type: 'function_call_output', call_id: 'call_country', output: 'P3 大昌王朝' },
     ]);
-    expect(request(1).body.tool_choice).toBe('none');
+    expect(app.getCallLog().calls[0].messages).toContainEqual({ role: 'tool', toolCallId: 'call_country', content: 'P3 大昌王朝' });
+    expect(JSON.stringify(app.getCallLog().calls)).not.toContain('opaque-reasoning-1');
+  });
+
+  it('换模型不转发前一个模型的推理续接资料;缺少加密资料的推理回复拒绝续接', async () => {
+    configure('gpt-6.1-sol');
+    const reasoning = { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'opaque-reasoning-1' };
+    fetchMock.mockImplementationOnce(async () => responseStream(responseFixture([reasoning, outputMessage('第一轮')], { model: 'gpt-6.1-sol' })));
+    const first = await app.aiChat(REQ);
+    configure('gpt-6-astra');
+    await app.aiChat({ ...REQ, messages: [...REQ.messages, { role: 'assistant', content: first.text, continuation: first.continuation }] });
+    expect(request(1).body.input).toEqual([{ role: 'user', content: '你好' }, { role: 'assistant', content: '第一轮' }]);
+    fetchMock.mockImplementationOnce(async () => responseStream(responseFixture([{ ...reasoning, encrypted_content: null }, outputMessage('不完整')], { model: 'gpt-6-astra' })));
+    await expect(app.aiChat(REQ)).rejects.toMatchObject({ code: 'bad-response' });
   });
 
   it.each([
@@ -200,11 +215,11 @@ describe('OpenAI', () => {
     if (code === 'invalid_api_key') expect(record.error?.message).toContain('***');
   });
 
-  it('记住密钥时重载恢复 provider、手填模型和独立密钥;清除后重载不能再调用', async () => {
-    configure('gpt-4.1-mini-2025-04-14');
+  it('记住密钥时重载恢复 provider、模型和独立密钥;清除后重载不能再调用', async () => {
+    configure('gpt-6.1-sol');
     app = await loadApp();
     await app.aiChat(REQ);
-    expect(request().body.model).toBe('gpt-4.1-mini-2025-04-14');
+    expect(request().body.model).toBe('gpt-6.1-sol');
     expect(request().headers.get('authorization')).toBe(`Bearer ${KEY}`);
     expect(app.getAiStatus()).toMatchObject({ provider: 'openai', ready: true });
     app.setSecret('openai', undefined);

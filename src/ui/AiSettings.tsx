@@ -17,7 +17,7 @@ import { createPortal } from 'react-dom';
 import { aiChat, getActiveProvider, setAiSettingsOpener, useAiOn, useAiStatus } from '../ai/client';
 import { AiError, type AiProviderKind } from '../ai/types';
 import { chooseProvider, cleanKey, getAiSettings, getSecrets, setAiEnabled, setSecret, updateAiSettings, useAiSettingsVersion } from '../ai/settings';
-import { OPENAI_MODELS } from '../ai/providers/openai';
+import { OPENAI_MODELS } from '../ai/providers/openaiModels';
 import { DEEPSEEK_MODELS } from '../ai/providers/deepseek';
 import { BAILIAN_MODELS, BAILIAN_REGIONS } from '../ai/providers/bailian';
 import { checkOfficialAi, officialServer, refreshOfficialAccount, useOfficialAccount } from '../ai/providers/official';
@@ -207,8 +207,8 @@ function SettingsTab() {
       {active === 'openai' && (
         <div className="ai-detail" data-detail="openai">
           <KeyField slot="openai" where={<a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">OpenAI 平台</a>} />
-          <ModelField value={s.openai.model} presets={OPENAI_MODELS} placeholder="比如 gpt-6.1-terra" onChange={(model) => updateAiSettings({ openai: { model } })} />
-          <p className="ai-note sub">API 单独计费,ChatGPT 订阅不包含 API 额度。GPT-6.1 Terra 使用 Responses API;预设模型关闭推理。其他手填模型须支持 Chat Completions,助手还需支持工具调用。</p>
+          <ModelField value={s.openai.model} presets={OPENAI_MODELS} allowCustom={false} placeholder="" onChange={(model) => updateAiSettings({ openai: { model } })} />
+          <p className="ai-note sub">API 单独计费,ChatGPT 订阅不包含 API 额度。三个模型都使用 Responses API。Terra 关闭推理;Sol / Astra 使用低推理强度,可能更慢,推理也占输出额度。</p>
           <p className="ai-note warn">密钥由浏览器直接发给 OpenAI,网页脚本可以读取。只在信任的部署上使用自己的密钥,建议取消下方的“记住密钥”;不要填共享密钥。正式服务建议由后端保管密钥。</p>
           <TestRow disabled={!sec.openai} sig={`openai|${s.openai.model}|${sec.openai?.length ?? 0}`} />
         </div>
@@ -328,10 +328,12 @@ function ModelField({
   presets,
   placeholder,
   onChange,
+  allowCustom = true,
 }: {
   value: string;
   presets: { id: string; note: string }[];
   placeholder: string;
+  allowCustom?: boolean;
   onChange: (m: string) => void;
 }) {
   const isPreset = presets.some((p) => p.id === value);
@@ -342,7 +344,7 @@ function ModelField({
       <label className="ai-label">模型</label>
       <select
         className="ai-input ai-select"
-        value={custom ? CUSTOM : value}
+        value={allowCustom && custom ? CUSTOM : value}
         onChange={(e) => {
           if (e.target.value === CUSTOM) {
             setCustom(true);
@@ -358,9 +360,9 @@ function ModelField({
             {p.id} —— {p.note}
           </option>
         ))}
-        <option value={CUSTOM}>手填模型名……</option>
+        {allowCustom && <option value={CUSTOM}>手填模型名……</option>}
       </select>
-      {custom && (
+      {allowCustom && custom && (
         <input
           className="ai-input ai-model"
           placeholder={placeholder}

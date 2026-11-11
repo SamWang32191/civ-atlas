@@ -84,7 +84,7 @@
 
 填入自己的 OpenAI、DeepSeek 或阿里云百炼 API Key 后，可以用 AI 把推演出的历史写成史书、解释和生成名称，或用一句话描述想要的修改：AI 列出改动清单供勾选执行（改历史的会先试推演给出结果，改地形的要重新生成整个世界，不能试推演），执行后可以撤销；也可以问它人物、某一州的海拔、气温、物产这类数据。AI 生成的内容都标有「AI 写」，在「AI 设置」中可以整体关闭。地形和历史本身不由 AI 生成。
 
-OpenAI 的设置方式：打开「AI 设置 → 用哪家 AI → OpenAI」，填入 [OpenAI 平台](https://platform.openai.com/api-keys)创建的 API Key，选模型后点「测试一下」。默认 `gpt-6.1-terra`，通过 Responses API 支持文字、JSON 和助手工具调用（`store: false`，不使用服务端会话存储）。也可选 `gpt-5.4-mini`、`gpt-5.4` 或手填支持 Chat Completions 的模型名（助手还需要工具调用能力）。GPT-6.1 Terra 和 GPT-5.4 系列关闭推理，其他模型使用服务商默认的推理设置。已保存的模型选择会保留，要切换请在设置中选择 `gpt-6.1-terra`。API 单独计费，ChatGPT 订阅不包含 API 额度；不读取 `OPENAI_API_KEY` 环境变量。
+OpenAI 的设置方式：打开「AI 设置 → 用哪家 AI → OpenAI」，填入 [OpenAI 平台](https://platform.openai.com/api-keys)创建的 API Key，选模型后点「测试一下」。模型选单只有 `gpt-6.1-sol`、`gpt-6.1-terra`、`gpt-6-astra`，不提供手填；默认仍为 `gpt-6.1-terra`，旧版本保存的其他模型会恢复为默认值。三个模型都通过 Responses API 支持文字、JSON 和助手工具调用（`store: false`，不使用服务端会话存储）。Terra 关闭推理；Sol / Astra 不支持关闭推理，使用 `low` 强度，推理也占输出 token 额度。助手在同一模型的后续调用中交回加密推理资料，不将这些资料写入调用日志。API 单独计费，ChatGPT 订阅不包含 API 额度；不读取 `OPENAI_API_KEY` 环境变量。
 
 密钥由浏览器直接发给 OpenAI，只应在信任的部署上填写自己的密钥，建议取消「下次打开时记住密钥」。网页脚本能读取浏览器内的密钥；[OpenAI 建议正式服务由后端保管密钥](https://developers.openai.com/api/reference/overview#authentication)，不要把共享密钥写进前端代码或构建配置。
 
