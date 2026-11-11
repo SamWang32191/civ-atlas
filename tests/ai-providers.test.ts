@@ -331,9 +331,9 @@ describe('我们的 AI(开发假服务器,假 fetch 直连,不开端口)', () =>
   it('没选 AI 时的说明:我们的 AI 开放了才提它', () => {
     chooseProvider(null);
     setOfficialServerForTest(null);
-    expect(getAiStatus().reason).toBe('还没有设置 AI:可以填上自己的 DeepSeek / 阿里云百炼密钥');
+    expect(getAiStatus().reason).toBe('还没有设置 AI:可以填上自己的 OpenAI / DeepSeek / 阿里云百炼密钥');
     setOfficialServerForTest('http://fake-ai.test');
-    expect(getAiStatus().reason).toBe('还没有设置 AI:可以用我们提供的 AI(消耗积分),或填上自己的 DeepSeek / 阿里云百炼密钥');
+    expect(getAiStatus().reason).toBe('还没有设置 AI:可以用我们提供的 AI(消耗积分),或填上自己的 OpenAI / DeepSeek / 阿里云百炼密钥');
     setOfficialServerForTest(undefined);
   });
 

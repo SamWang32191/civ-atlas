@@ -57,7 +57,7 @@ const LIST_MAX = 50;
 /** 「已复制」显示多久 */
 const COPIED_MS = 2000;
 
-const PROVIDER: Record<string, string> = { none: '未设置', official: '我们的 AI', deepseek: 'DeepSeek', bailian: '阿里云百炼', mock: '测试用假 AI' };
+const PROVIDER: Record<string, string> = { none: '未设置', official: '我们的 AI', openai: 'OpenAI', deepseek: 'DeepSeek', bailian: '阿里云百炼', mock: '测试用假 AI' };
 const AI_ERR: Record<string, string> = {
   auth: '密钥不对或登录过期',
   quota: '余额或积分不够',

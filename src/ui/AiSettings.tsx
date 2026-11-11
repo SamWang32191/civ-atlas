@@ -7,7 +7,7 @@
  *
  *   我们的 AI(积分):登录网站账号后按次扣积分(登录窗和「我的世界」那个是同一个,AccountDialogs.tsx);
  *                   服务器还没上线时显示"还在内测,暂未开放"(src/ai/providers/official.ts)
- *   DeepSeek / 阿里云百炼:用户自己的 API 密钥,只存在这个浏览器里,请求直接从浏览器发给那一家
+ *   OpenAI / DeepSeek / 阿里云百炼:用户自己的 API 密钥,只存在这个浏览器里,请求直接从浏览器发给那一家
  *   测试用假 AI:开发时、或网址带 ai=mock 时才出现(不联网)
  *
  * 各功能在"还没设置 AI"时调 openAiSettings() 打开这里(client.ts 的 setAiSettingsOpener)。
@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom';
 import { aiChat, getActiveProvider, setAiSettingsOpener, useAiOn, useAiStatus } from '../ai/client';
 import { AiError, type AiProviderKind } from '../ai/types';
 import { chooseProvider, cleanKey, getAiSettings, getSecrets, setAiEnabled, setSecret, updateAiSettings, useAiSettingsVersion } from '../ai/settings';
+import { OPENAI_MODELS } from '../ai/providers/openai';
 import { DEEPSEEK_MODELS } from '../ai/providers/deepseek';
 import { BAILIAN_MODELS, BAILIAN_REGIONS } from '../ai/providers/bailian';
 import { checkOfficialAi, officialServer, refreshOfficialAccount, useOfficialAccount } from '../ai/providers/official';
@@ -142,6 +143,7 @@ interface Choice {
 
 const CHOICES: Choice[] = [
   { kind: 'official', name: '我们的 AI', desc: '登录后按次扣积分' },
+  { kind: 'openai', name: 'OpenAI', desc: '用自己的 API 密钥,由 OpenAI 计费' },
   { kind: 'deepseek', name: 'DeepSeek', desc: '用自己的 API 密钥,由 DeepSeek 计费' },
   { kind: 'bailian', name: '阿里云百炼', desc: '用自己的 API 密钥,由阿里云计费' },
   { kind: 'mock', name: '测试用假 AI', desc: '回一段假话,检查界面用' },
@@ -165,6 +167,7 @@ function SettingsTab() {
       if (acct.credits === undefined) return { text: '已登录', cls: 'ok' };
       return { text: `余额 ${acct.credits} 积分`, cls: acct.credits > 0 ? 'ok' : 'warn' };
     }
+    if (k === 'openai') return sec.openai ? { text: '已填密钥', cls: 'ok' } : { text: '未填密钥' };
     if (k === 'deepseek') return sec.deepseek ? { text: '已填密钥', cls: 'ok' } : { text: '未填密钥' };
     if (k === 'bailian') return sec.bailian ? { text: '已填密钥', cls: 'ok' } : { text: '未填密钥' };
     return { text: forced ? '网址带 ai=mock,强制使用' : '不联网', cls: forced ? 'ok' : undefined };
@@ -201,6 +204,15 @@ function SettingsTab() {
 
       {forced && <p className="ai-note warn">网址带 ai=mock,只能用测试用假 AI</p>}
 
+      {active === 'openai' && (
+        <div className="ai-detail" data-detail="openai">
+          <KeyField slot="openai" where={<a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">OpenAI 平台</a>} />
+          <ModelField value={s.openai.model} presets={OPENAI_MODELS} placeholder="比如 gpt-6.1-terra" onChange={(model) => updateAiSettings({ openai: { model } })} />
+          <p className="ai-note sub">API 单独计费,ChatGPT 订阅不包含 API 额度。GPT-6.1 Terra 使用 Responses API;预设模型关闭推理。其他手填模型须支持 Chat Completions,助手还需支持工具调用。</p>
+          <p className="ai-note warn">密钥由浏览器直接发给 OpenAI,网页脚本可以读取。只在信任的部署上使用自己的密钥,建议取消下方的“记住密钥”;不要填共享密钥。正式服务建议由后端保管密钥。</p>
+          <TestRow disabled={!sec.openai} sig={`openai|${s.openai.model}|${sec.openai?.length ?? 0}`} />
+        </div>
+      )}
       {active === 'deepseek' && (
         <div className="ai-detail" data-detail="deepseek">
           <KeyField slot="deepseek" where={<a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noreferrer">DeepSeek 开放平台</a>} />
@@ -231,7 +243,7 @@ function SettingsTab() {
       {active === 'official' && (
         <div className="ai-detail" data-detail="official">
           {!server ? (
-            <p className="ai-note">内测中,暂未开放;可以先用自己的 DeepSeek 或百炼密钥</p>
+            <p className="ai-note">内测中,暂未开放;可以先用自己的 OpenAI、DeepSeek 或百炼密钥</p>
           ) : acct.loggedIn ? (
             <OfficialAccountView />
           ) : (
@@ -261,7 +273,7 @@ function SettingsTab() {
   );
 }
 
-function KeyField({ slot, where }: { slot: 'deepseek' | 'bailian'; where: React.ReactNode }) {
+function KeyField({ slot, where }: { slot: 'openai' | 'deepseek' | 'bailian'; where: React.ReactNode }) {
   const saved = getSecrets()[slot] ?? '';
   const [v, setV] = useState(saved);
   const [show, setShow] = useState(false);

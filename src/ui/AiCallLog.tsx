@@ -9,6 +9,7 @@ import type { AiCallRecord, AiProviderKind } from '../ai/types';
 const PROVIDER_NAME: Record<AiProviderKind | 'none', string> = {
   none: '未设置',
   official: '我们的 AI',
+  openai: 'OpenAI',
   deepseek: 'DeepSeek',
   bailian: '阿里云百炼',
   mock: '测试用假 AI',

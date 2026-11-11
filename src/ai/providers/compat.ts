@@ -1,7 +1,7 @@
 /**
- * OpenAI 兼容的 chat/completions 调用(DeepSeek、阿里云百炼共用):浏览器直接发给服务商,流式读回。
+ * OpenAI 兼容的 chat/completions 调用(OpenAI、DeepSeek、阿里云百炼共用):浏览器直接发给服务商,流式读回。
  *
- * - 请求:{ model, messages, stream: true, stream_options: { include_usage: true }, temperature?, max_tokens?,
+ * - 请求:{ model, messages, stream: true, stream_options: { include_usage: true }, temperature?, max_tokens? / max_completion_tokens?,
  *          response_format?: { type: 'json_object' }, tools?, tool_choice? } + 各家自己的字段(深度思考开关)
  * - 回复:SSE,每条 data 是一个 JSON(choices[0].delta.content 是这段正文;深度思考的"想"在 reasoning_content 里,不算正文);
  *         最后一条带 usage(choices 为空),然后 data: [DONE]
@@ -23,6 +23,8 @@ export interface CompatConfig {
   url: string;
   key: string;
   model: string;
+  /** OpenAI 用 max_completion_tokens;兼容服务商仍用 max_tokens */
+  maxTokensField?: 'max_tokens' | 'max_completion_tokens';
   /** 各家自己的请求字段(比如深度思考开关) */
   extra?: Record<string, unknown>;
   /** 各家特有的错误(先于通用规则);返回 null 走通用规则 */
@@ -46,14 +48,14 @@ const clipMsg = (s: string) => {
   return t.length > 200 ? t.slice(0, 200) + '…' : t;
 };
 
-/** json 模式:两家都要求提示词里出现 "json" 字样,没有就补一句 */
+/** json 模式:提示词里要出现 "json" 字样,没有就补一句 */
 export function withJsonHint(messages: AiMessage[]): AiMessage[] {
   if (messages.some((m) => /json/i.test(m.content))) return messages;
   return [{ role: 'system', content: '请只输出一个 JSON 对象(json),不要输出别的文字。' }, ...messages];
 }
 
 /** 拼请求体(单测检查 json 模式等参数) */
-export function compatBody(cfg: Pick<CompatConfig, 'model' | 'extra'>, req: AiRequest): Record<string, unknown> {
+export function compatBody(cfg: Pick<CompatConfig, 'model' | 'extra' | 'maxTokensField'>, req: AiRequest): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: cfg.model,
     messages: (req.json ? withJsonHint(req.messages) : req.messages).map(wireMessage),
@@ -61,7 +63,7 @@ export function compatBody(cfg: Pick<CompatConfig, 'model' | 'extra'>, req: AiRe
     stream_options: { include_usage: true },
   };
   if (req.temperature !== undefined) body.temperature = req.temperature;
-  if (req.maxTokens !== undefined) body.max_tokens = req.maxTokens;
+  if (req.maxTokens !== undefined) body[cfg.maxTokensField ?? 'max_tokens'] = req.maxTokens;
   if (req.json) body.response_format = { type: 'json_object' };
   if (req.tools?.length) {
     body.tools = req.tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
@@ -118,7 +120,8 @@ function readUsage(u: any): AiUsage | undefined {
   return { inputTokens: Number.isFinite(i) ? i : 0, outputTokens: Number.isFinite(o) ? o : 0 };
 }
 
-function errorInfo(status: number, body: string): HttpErrorInfo {
+/** 服务商错误体 → 已遮掉密钥的错误信息(Chat Completions / Responses 共用) */
+export function errorInfo(status: number, body: string): HttpErrorInfo {
   let code = '';
   let message = '';
   try {

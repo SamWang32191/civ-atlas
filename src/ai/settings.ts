@@ -2,7 +2,7 @@
  * AI 设置与密钥的本地存储(阶段 5)。只存在用户自己的浏览器里,不上传。
  *
  *   设置(用不用 AI、用哪家、模型、地域、深度思考、记不记密钥)→ localStorage 'civ-atlas:ai-settings'
- *   密钥(DeepSeek / 百炼的 API 密钥、我们 AI 的登录令牌)→
+ *   密钥(OpenAI / DeepSeek / 百炼的 API 密钥、我们 AI 的登录令牌)→
  *       "记住密钥"开着:localStorage 'civ-atlas:ai-secrets'(下次打开还在)
  *       关着:只在内存里(这次打开的页面有效,刷新 / 关掉就忘),同时把存过的删掉
  *
@@ -22,12 +22,14 @@ export interface AiSettings {
   provider: AiProviderKind | null;
   /** 在这个浏览器里记住密钥和登录 */
   remember: boolean;
+  openai: { model: string };
   deepseek: { model: string; thinking: boolean };
   bailian: { model: string; region: BailianRegion; thinking: boolean };
 }
 
-/** 存密钥的格子:两家的 API 密钥 + 我们的 AI 的登录令牌 */
+/** 存密钥的格子:各家的 API 密钥 + 我们的 AI 的登录令牌 */
 export interface AiSecrets {
+  openai?: string;
   deepseek?: string;
   bailian?: string;
   official?: { token: string; account?: string };
@@ -37,13 +39,14 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   enabled: true,
   provider: null,
   remember: true,
+  openai: { model: 'gpt-6.1-terra' },
   deepseek: { model: 'deepseek-flash', thinking: false },
   bailian: { model: 'qwen-plus', region: 'cn', thinking: false },
 };
 
 const SETTINGS_KEY = 'civ-atlas:ai-settings';
 const SECRETS_KEY = 'civ-atlas:ai-secrets';
-const KINDS: AiProviderKind[] = ['official', 'deepseek', 'bailian', 'mock'];
+const KINDS: AiProviderKind[] = ['official', 'openai', 'deepseek', 'bailian', 'mock'];
 
 function storage(): Storage | null {
   try {
@@ -80,12 +83,14 @@ const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d);
 export function sanitizeSettings(v: unknown): AiSettings {
   const d = DEFAULT_AI_SETTINGS;
   const o = (v && typeof v === 'object' ? v : {}) as Record<string, any>;
+  const oa = (o.openai && typeof o.openai === 'object' ? o.openai : {}) as Record<string, unknown>;
   const ds = (o.deepseek && typeof o.deepseek === 'object' ? o.deepseek : {}) as Record<string, unknown>;
   const bl = (o.bailian && typeof o.bailian === 'object' ? o.bailian : {}) as Record<string, unknown>;
   return {
     enabled: bool(o.enabled, d.enabled),
     provider: KINDS.includes(o.provider) ? o.provider : null,
     remember: bool(o.remember, d.remember),
+    openai: { model: str(oa.model, d.openai.model) },
     deepseek: { model: str(ds.model, d.deepseek.model), thinking: bool(ds.thinking, d.deepseek.thinking) },
     bailian: {
       model: str(bl.model, d.bailian.model),
@@ -98,6 +103,7 @@ export function sanitizeSettings(v: unknown): AiSettings {
 function sanitizeSecrets(v: unknown): AiSecrets {
   const o = (v && typeof v === 'object' ? v : {}) as Record<string, any>;
   const out: AiSecrets = {};
+  if (typeof o.openai === 'string' && o.openai) out.openai = o.openai;
   if (typeof o.deepseek === 'string' && o.deepseek) out.deepseek = o.deepseek;
   if (typeof o.bailian === 'string' && o.bailian) out.bailian = o.bailian;
   if (o.official && typeof o.official.token === 'string' && o.official.token) {
@@ -128,7 +134,8 @@ export function getAiSettings(): AiSettings {
   return settings!;
 }
 
-export function updateAiSettings(patch: Partial<Omit<AiSettings, 'deepseek' | 'bailian'>> & {
+export function updateAiSettings(patch: Partial<Omit<AiSettings, 'openai' | 'deepseek' | 'bailian'>> & {
+  openai?: Partial<AiSettings['openai']>;
   deepseek?: Partial<AiSettings['deepseek']>;
   bailian?: Partial<AiSettings['bailian']>;
 }): void {
@@ -136,6 +143,7 @@ export function updateAiSettings(patch: Partial<Omit<AiSettings, 'deepseek' | 'b
   settings = sanitizeSettings({
     ...cur,
     ...patch,
+    openai: { ...cur.openai, ...patch.openai },
     deepseek: { ...cur.deepseek, ...patch.deepseek },
     bailian: { ...cur.bailian, ...patch.bailian },
   });
@@ -145,7 +153,7 @@ export function updateAiSettings(patch: Partial<Omit<AiSettings, 'deepseek' | 'b
   emit();
 }
 
-const hasAny = (s: AiSecrets) => !!(s.deepseek || s.bailian || s.official);
+const hasAny = (s: AiSecrets) => !!(s.openai || s.deepseek || s.bailian || s.official);
 
 export function getSecrets(): Readonly<AiSecrets> {
   load();
@@ -200,7 +208,7 @@ export function resetAiSettingsForTest(): void {
 export function scrubSecrets(text: string): string {
   let out = text;
   const s = secrets ?? {};
-  for (const k of [s.deepseek, s.bailian, s.official?.token]) {
+  for (const k of [s.openai, s.deepseek, s.bailian, s.official?.token]) {
     if (k && k.length >= 6) out = out.split(k).join('***');
   }
   return out.replace(/\bsk-[A-Za-z0-9_-]{6,}/g, 'sk-***');

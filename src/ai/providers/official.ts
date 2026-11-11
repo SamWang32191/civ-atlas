@@ -296,7 +296,7 @@ export const officialProvider: AiProvider = {
   },
   status() {
     if (!officialServer()) {
-      return { ready: false, model: '', reason: '我们的 AI 还在内测,暂未开放;现在可以先在"AI"设置里填自己的 DeepSeek 或阿里云百炼密钥' };
+      return { ready: false, model: '', reason: '我们的 AI 还在内测,暂未开放;现在可以先在"AI"设置里填自己的 OpenAI、DeepSeek 或阿里云百炼密钥' };
     }
     if (!token()) return { ready: false, model: '', reason: '还没登录我们的 AI:到"AI"设置里登录' };
     return { ready: true, model: acct.model ?? '我们的 AI' };

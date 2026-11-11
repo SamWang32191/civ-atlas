@@ -409,7 +409,7 @@ export function shortDay(iso: string): string {
   return Number.isFinite(d.getTime()) ? `${d.getMonth() + 1} 月 ${d.getDate()} 日` : '';
 }
 
-const PROVIDER_NAME: Record<string, string> = { official: '我们的 AI', deepseek: 'DeepSeek', bailian: '阿里云百炼', mock: '测试用假 AI' };
+const PROVIDER_NAME: Record<string, string> = { official: '我们的 AI', openai: 'OpenAI', deepseek: 'DeepSeek', bailian: '阿里云百炼', mock: '测试用假 AI' };
 
 /** 谁写的:"DeepSeek · deepseek-chat"(导出的文件里这样写;阅读页那行小字传 sep = "，") */
 export function historyWriter(note: Pick<AiNote, 'provider' | 'model'>, sep = ' · '): string {

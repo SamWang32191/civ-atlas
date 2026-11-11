@@ -1,7 +1,7 @@
 /**
  * AI 调用的唯一入口(阶段 5):各功能只调 aiChat(),不直接碰服务商。
  *
- * - 服务商(provider)在这里登记:setup.ts 启动时登记 official / deepseek / bailian,本文件自带 mock(测试用假 AI,不联网)
+ * - 服务商(provider)在这里登记:setup.ts 启动时登记 official / openai / deepseek / bailian,本文件自带 mock(测试用假 AI,不联网)
  * - 当前用哪家 = setActiveProvider(...)(设置面板改);网址带 `ai=mock` 时一律用假 AI(冒烟测试、开发用)
  * - 每次调用(成功或失败)都交给"调用记录器"(setCallRecorder,启动时换成 callLog.ts 里存本地的那个);默认只在内存里留最近 50 条
  * - 失败一律抛 AiError(中文说明),功能里 catch 了直接给用户看
@@ -26,7 +26,7 @@ export interface AiProviderStatus {
 
 export interface AiProvider {
   kind: AiProviderKind;
-  /** 界面上的名字:"我们的 AI(积分)""DeepSeek""阿里云百炼""测试用假 AI" */
+  /** 界面上的名字:"我们的 AI(积分)""OpenAI""DeepSeek""阿里云百炼""测试用假 AI" */
   label: string;
   status(): AiProviderStatus;
   /** 这家现在开没开放(我们的 AI 没配置服务器时 = false);不写 = 开放 */
@@ -117,7 +117,7 @@ export function getAiStatus(): AiStatus {
 
 /** 没选 AI 时的说明:我们的 AI 开放了才提它 */
 function unsetReason(): string {
-  const own = '填上自己的 DeepSeek / 阿里云百炼密钥';
+  const own = '填上自己的 OpenAI / DeepSeek / 阿里云百炼密钥';
   return providers.get('official')?.offered?.() ? `还没有设置 AI:可以用我们提供的 AI(消耗积分),或${own}` : `还没有设置 AI:可以${own}`;
 }
 
